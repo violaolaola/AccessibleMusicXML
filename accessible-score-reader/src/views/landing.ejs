@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Accessible MusicXML Viewer</title>
+  <style>
+    body {
+      margin: 10px;
+      background: black;
+      font-family: Arial, Helvetica, sans-serif;
+      margin-bottom: 5%;
+    }
+    h1, h2 {
+      font-family: 'Edwin', sans-serif;
+    }
+    h2 {
+      text-align:left;
+    }
+    
+    h1 {
+      margin-top: 10px;
+      z-index: 1;
+      text-align: center;
+      padding: 50px;
+      padding-bottom: 10vh;
+      border-left: solid;
+      border-top: solid;
+      border-right: solid;
+      color: white;
+      border-top-right-radius: 25px;
+      border-top-left-radius: 25px;
+      background: linear-gradient(rgb(25, 26, 96) 40%, rgba(255, 255, 255, .5) 100%, rgba(255, 255, 255, .5) 100%);
+    }
+    
+    #MetaDataScore {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      color: white;
+      margin-top: -50px;
+      padding-top: 20px;
+      z-index: 2;
+      padding: 10px;
+      padding-left: 20px;
+      padding-bottom: 30px;
+      text-align: center;
+      background: linear-gradient(rgb(25, 26, 96) 80%, rgba(255, 255, 255, .0) 100%, rgba(255, 255, 255, 0) 0%);      
+      border-top-right-radius: 25px;
+      border-top-left-radius: 25px;
+      border-bottom-left-radius: 10px;
+      border-bottom-right-radius: 10px;
+    }
+    
+    #scoreMetadata {
+      margin-top: 10px;
+      align-items: center;
+    }
+
+    .channel {
+      margin-top: 10px;
+      padding: 10px;
+      border: 2px solid #ccc;
+      color: white;
+      border-radius: 8px;
+      background: rgba(25, 26, 96, 1);
+      position: relative;
+      border-radius: 25px;
+    }
+
+    #channel1 {
+      border-bottom: none; 
+    }
+
+    #channel2 {
+      border-bottom: none;
+      border-top: none;
+    }
+
+    #channel3 {
+      border-top:none;
+    }
+    .score {
+      display: flex;
+      flex-wrap: nowrap;
+      flex-direction: row;
+      flex: 2 1 auto;
+      gap: 10px;
+      height: 25vh;
+      align-items: flex-end;
+      overflow: hidden;
+      border: solid;
+      position: relative;
+      border-radius: 15px;
+      background-color: white;
+    }
+    .measure {
+      flex: 1;
+      flex-grow: 1;
+      flex-basis: 100%;
+      border: 1px solid #333;
+      padding: 10px;
+      width: 220px;
+      background: #f9f9f9;
+    }
+    .measure[role="region"] {
+      border-left: 5px solid #666;
+    }
+    .note {
+      font-weight: bold;
+      color: #222;
+    }
+    .structure {
+      margin-bottom: 5px;
+    }
+    .interpretation {
+      font-style: italic;
+      color: #555;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Accessible Score Reader</h1>
+  <section id="MetaDataScore" aria-labelledby="Score-information">
+    <h2>Score Data</h2>
+    <input type="file" id="fileInput" accept=".xml,.musicxml" aria-label="Upload MusicXML file">
+    <div class=""></div>
+    <p id="scoreMetadata"></p>
+    </div>
+  </section>
+  <section id="channel1" class="channel" aria-labelledby="notes-heading">
+    <h2 id="notes-heading">Channel 1: Notes</h2>
+    <div class="score" role="group" aria-label="Note View Score"></div>
+  </section>
+
+  <section id="channel2" class="channel" aria-labelledby="structure-heading">
+    <h2 id="structure-heading">Channel 2: Measure Structure</h2>
+    <div class="score" role="group" aria-label="Structural Score View"></div>
+  </section>
+
+  <section id="channel3" class="channel" aria-labelledby="interpretation-heading">
+    <h2 id="interpretation-heading">Channel 3: Interpretation & Dynamics</h2>
+    <div class="score" role="group" aria-label="Interpretation Score View"></div>
+  </section>
+
+  <script>
+    let currentChannelIndex = 0;
+    const channels = ['channel1', 'channel2', 'channel3'];
+    let lastLeftSwipeTime = 0;
+    let currentMeasureIndex = 0;
+    let isPlaying = false;
+    let holdTimer;
+
+    // Placeholder for screen reader functionality for debugging
+    function speakText(text) {
+      console.log("SPEAK:", text);
+    }
+
+    function togglePlay() {
+      isPlaying = !isPlaying;
+      speakText(isPlaying ? "Playback started" : "Playback stopped");
+      document.querySelectorAll('.score .measure').forEach(el => {
+        el.style.outline = isPlaying ? '2px solid blue' : 'none';
+      });
+    }
+
+    
+
+    function changeView(direction) {
+      document.getElementById(channels[currentChannelIndex]).style.display = 'none';
+      currentChannelIndex = (currentChannelIndex + direction + channels.length) % channels.length;
+      document.getElementById(channels[currentChannelIndex]).style.display = 'block';
+      currentMeasureIndex = 0;
+      highlightMeasure(currentMeasureIndex);
+      speakText("Switched to " + document.getElementById(channels[currentChannelIndex]).querySelector('h2').textContent);
+    }
+
+    function returnToStart() {
+      highlightMeasure(0);
+      speakText("Returned to start of section");
+    }
+
+    function moveToNextMeasure() {
+      highlightMeasure(currentMeasureIndex + 1);
+    }
+
+    function moveToPrevMeasure() {
+      if (currentMeasureIndex == 0) {
+        speakText("Start of section");
+      } else {
+      highlightMeasure(currentMeasureIndex - 1)}
+    }
+
+    function highlightMeasure(index) {
+      const channelIds = ['channel1', 'channel2', 'channel3'];
+      let anyFound = false;
+
+      channelIds.forEach(id => {
+        const measures = document.getElementById(id).querySelectorAll('.measure');
+        if (index >= 0 && index < measures.length) {
+          measures.forEach(m => m.style.outline = 'none');
+          const target = measures[index];
+          target.style.outline = '3px solid blue';
+          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          anyFound = true;
+        }
+      });
+
+      if (anyFound) {
+        currentMeasureIndex = index;
+        speakText(`Measure ${currentMeasureIndex + 1}`);
+      } else {
+        speakText("No more measures");
+      }
+    }
+
+    function startHoldTimer(target) {
+      holdTimer = setTimeout(() => {
+        const text = target.innerText || "No text available";
+        speakText("Reading: " + text);
+      }, 800);
+    }
+
+    function cancelHoldTimer() {
+      clearTimeout(holdTimer);
+    }
+
+    document.getElementById('fileInput').addEventListener('change', function (e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(e.target.result, "application/xml");
+
+        const parts = xmlDoc.querySelectorAll("part");
+        const firstPart = parts[0];
+        const measures = firstPart.querySelectorAll("measure");
+
+        const score1 = document.querySelector("#channel1 .score");
+        const score2 = document.querySelector("#channel2 .score");
+        const score3 = document.querySelector("#channel3 .score");
+
+        score1.innerHTML = '';
+        score2.innerHTML = '';
+        score3.innerHTML = '';
+
+        measures.forEach((measure) => {
+          const num = measure.getAttribute("number");
+
+          const m1 = document.createElement("article");
+          const m2 = document.createElement("article");
+          const m3 = document.createElement("article");
+
+          m1.className = m2.className = m3.className = "measure";
+          m1.setAttribute("role", "region");
+          m1.setAttribute("aria-label", `Measure ${num}: notes`);
+          m2.setAttribute("role", "region");
+          m2.setAttribute("aria-label", `Measure ${num}: structure`);
+          m3.setAttribute("role", "region");
+          m3.setAttribute("aria-label", `Measure ${num}: interpretation`);
+          
+          //Score Data
+          const scoreTitle = xmlDoc.querySelector("score-partwise > work > work-title")?.textContent ?? "";
+          const scoreOpus = xmlDoc.querySelector("score-partwise > work > work-number")?.textContent ?? "";
+          
+          const scoreMovementNumber = xmlDoc.querySelector("score-partwise > movement-number")?.textContent ?? "";
+          const scoreMovementTitle = xmlDoc.querySelector("score-partwise > movement-title")?.textContent ?? "";
+          const scoreComposerEls = xmlDoc.querySelectorAll("score-partwise > identification > creator");
+          const scorePartsEls = xmlDoc.querySelectorAll("score-partwise > part-list > score-part > part-name");
+
+          const scoreComposer = Array.from(scoreComposerEls).map(el => el.textContent).join(", ");
+          const scoreParts = Array.from(scorePartsEls).map(el => el.textContent).join(", ");
+
+          const scoreRights = xmlDoc.querySelectorAll("score-partwise > identification > rights")?.textContent ?? "";
+
+          const scoreTitleAll = `${scoreTitle}, ${scoreOpus}`;
+          var scoreMovement = `Movement number ${scoreMovementNumber}: ${scoreMovementTitle}`;
+          //check for movement changes by page to add in
+          const scorePartsAll = 'Scored for ${scoreParts}'?.textContent ?? "";
+        
+          document.getElementById('MetaDataScore').innerHTML = `
+            Title: ${scoreTitleAll} ${scoreMovement} <br>
+            Composed by: ${scoreComposer} <br>
+            Score information: ${scorePartsAll}
+            `;
+
+          // Channel 1: Notes
+          const pitches = measure.querySelectorAll("note pitch");
+          pitches.forEach(pitch => {
+            const step = pitch.querySelector("step")?.textContent;
+            const octave = pitch.querySelector("octave")?.textContent;
+            const type = pitch.parentElement.querySelector("type")?.textContent;
+            const dur = pitch.parentElement.querySelector("duration")?.textContent;
+            const note = document.createElement("div");
+            note.className = "note";
+            note.textContent = `${step}${octave} - ${type || "note"} (dur: ${dur})`;
+            m1.appendChild(note);
+          });
+
+          // Channel 2: Structure
+          const time = measure.querySelector("attributes time");
+          const key = measure.querySelector("attributes key");
+          const beats = time?.querySelector("beats")?.textContent;
+          const beatType = time?.querySelector("beat-type")?.textContent;
+          const fifths = key?.querySelector("fifths")?.textContent;
+          const struct = document.createElement("div");
+          struct.className = "structure";
+          struct.textContent = `Time: ${beats || "–"}/${beatType || "–"}, Key: ${fifths || "–"} fifths`;
+          m2.appendChild(struct);
+
+          // Channel 3: Interpretation
+          const interp = document.createElement("div");
+          interp.className = "interpretation";
+          let marks = [];
+
+          measure.querySelectorAll("direction-type dynamics > *").forEach(d => marks.push(`Dynamic: ${d.tagName}`));
+          measure.querySelectorAll("notations articulations > *").forEach(a => marks.push(`Articulation: ${a.tagName}`));
+          measure.querySelectorAll("notations slur").forEach(s => marks.push(`Slur (${s.getAttribute("type")})`));
+          measure.querySelectorAll("sound[tempo]").forEach(t => marks.push(`Tempo: ${t.getAttribute("tempo")} BPM`));
+          interp.innerHTML = marks.join("<br>") || "—";
+          m3.appendChild(interp);
+
+          score1.appendChild(m1);
+          score2.appendChild(m2);
+          score3.appendChild(m3);
+        });
+
+        currentMeasureIndex = 0;
+        highlightMeasure(currentMeasureIndex);
+      };
+
+      reader.readAsText(file);
+    });
+
+    // Keyboard navigation
+    document.addEventListener('keydown', (e) => {
+      if (e.key === ' ') {
+        e.preventDefault();
+        togglePlay();
+      } else if (e.key === 'ArrowLeft') {
+        const now = Date.now();
+        if (now - lastLeftSwipeTime < 600) returnToStart();
+        lastLeftSwipeTime = now;
+      } else if (e.key === 'Arrow Left') {
+        moveToPrevMeasure();
+      } else if (e.key === 'ArrowRight') {
+        moveToNextMeasure();
+      } else if (e.key === 'ArrowUp') {
+        changeView(-1);
+      } else if (e.key === 'ArrowDown') {
+        changeView(1);
+      }
+    });
+
+    // Touch navigation
+    let touchStartX = 0, touchStartY = 0;
+
+    document.addEventListener('touchstart', (e) => {
+      const touch = e.changedTouches[0];
+      touchStartX = touch.clientX;
+      touchStartY = touch.clientY;
+      startHoldTimer(e.target);
+    }, { passive: true });
+
+    document.addEventListener('touchend', (e) => {
+      cancelHoldTimer();
+
+      const touch = e.changedTouches[0];
+      const dx = touch.clientX - touchStartX;
+      const dy = touch.clientY - touchStartY;
+      const absX = Math.abs(dx);
+      const absY = Math.abs(dy);
+
+      if (absX > 50 && absX > absY) {
+        if (dx > 0) {
+          const now = Date.now();
+          if (now - lastLeftSwipeTime < 600) returnToStart();
+          lastLeftSwipeTime = now;
+        } else {
+          moveToNextMeasure();
+        }
+      } else if (absY > 50) {
+        changeView(dy > 0 ? 1 : -1);
+      } else {
+        togglePlay();
+      }
+    });
+  </script>
+</body>
+</html>
