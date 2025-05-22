@@ -1,11 +1,11 @@
 const express = require('express');
 const viteExpress = require('vite-express');
 const path = require('path');
-
-const app = express();
+const ejs = require('ejs');
+const app = viteExpress();
 
 app.set('view engine', 'ejs');
-app.set('views', './src/views');
+app.set('views', '/src/views');
 
 app.get('/', (req, res) => {
 	res.render('landing', { title: 'Accessible Music Reader' });
