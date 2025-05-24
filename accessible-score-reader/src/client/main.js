@@ -1,1 +1,0 @@
-document.getElementById('message').textContent = "This is from Vite's frontend!";
